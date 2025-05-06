@@ -13,17 +13,17 @@ import (
 type Point struct{ X, Y float64 }
 type Quadrilateral [4]Point
 
-// shrinkQuadAligned insets an axis-aligned quad by one grid cell on all sides.
+// shrinkQuadAligned insets an axis-aligned quad by half a grid cell on all sides, trimming margins and labels.
 func shrinkQuadAligned(q Quadrilateral) Quadrilateral {
 	minX, minY := q[0].X, q[0].Y
 	maxX, maxY := q[2].X, q[2].Y
-	// one cell is 1/18th of the board width
 	cell := (maxX - minX) / 18.0
+	inset := cell * 0.5
 	return Quadrilateral{
-		{minX + cell, minY + cell},
-		{maxX - cell, minY + cell},
-		{maxX - cell, maxY - cell},
-		{minX + cell, maxY - cell},
+		{minX + inset, minY + inset},
+		{maxX - inset, minY + inset},
+		{maxX - inset, maxY - inset},
+		{minX + inset, maxY - inset},
 	}
 }
 
@@ -34,44 +34,28 @@ func FindGoban(img *image.NRGBA) (Quadrilateral, error) {
 	minX, minY := float64(b.Max.X), float64(b.Max.Y)
 	maxX, maxY := 0.0, 0.0
 	found := false
-
 	isWood := func(c color.Color) bool {
 		r, g, b, _ := c.RGBA()
 		rf, gf, bf := float64(r)/65535, float64(g)/65535, float64(b)/65535
 		h, s, _ := rgbToHSV(rf, gf, bf)
 		return h >= 20 && h <= 45 && s >= 0.3
 	}
-
 	for y := b.Min.Y; y < b.Max.Y; y += 2 {
 		for x := b.Min.X; x < b.Max.X; x += 2 {
 			if isWood(img.At(x, y)) {
 				found = true
-				xf, yf := float64(x), float64(y)
-				if xf < minX {
-					minX = xf
-				}
-				if xf > maxX {
-					maxX = xf
-				}
-				if yf < minY {
-					minY = yf
-				}
-				if yf > maxY {
-					maxY = yf
-				}
+				xF, yF := float64(x), float64(y)
+				if xF < minX { minX = xF }
+				if xF > maxX { maxX = xF }
+				if yF < minY { minY = yF }
+				if yF > maxY { maxY = yF }
 			}
 		}
 	}
 	if !found {
 		return Quadrilateral{}, errors.New("no wood region found")
 	}
-
-	q := Quadrilateral{
-		{minX, minY},
-		{maxX, minY},
-		{maxX, maxY},
-		{minX, maxY},
-	}
+	q := Quadrilateral{{minX, minY}, {maxX, minY}, {maxX, maxY}, {minX, maxY}}
 	log.Printf("FindGoban: bounds %v", q)
 	return q, nil
 }
@@ -82,16 +66,13 @@ func FindActualBoard(img *image.NRGBA, quad Quadrilateral) (Quadrilateral, error
 	sub := cropQuad(img, quad)
 	w, h := sub.Bounds().Dx(), sub.Bounds().Dy()
 	log.Printf("subimage %dx%d", w, h)
-
 	thr, _, darkFrac := autoSetup(sub)
 	log.Printf("thr=%d darkFrac=%.3f", thr, darkFrac)
-
 	ys, xs := findLines(sub, w, h, thr, darkFrac)
 	log.Printf("lines h=%d v=%d", len(ys), len(xs))
 	if len(ys) != 19 || len(xs) != 19 {
 		return Quadrilateral{}, fmt.Errorf("grid not found: h=%d v=%d", len(ys), len(xs))
 	}
-
 	tl := interpQuadPoint(quad, xs[0]/float64(w-1), ys[0]/float64(h-1))
 	tr := interpQuadPoint(quad, xs[18]/float64(w-1), ys[0]/float64(h-1))
 	br := interpQuadPoint(quad, xs[18]/float64(w-1), ys[18]/float64(h-1))
@@ -123,37 +104,23 @@ func CropAndCorrect(img *image.NRGBA, quad Quadrilateral, size int) (*image.NRGB
 	return out, nil
 }
 
-// --- internal helpers ---
+// ------- internal helpers --------
 
 func cropQuad(img *image.NRGBA, q Quadrilateral) *image.NRGBA {
 	minX, minY := q[0].X, q[0].Y
-	maxX, maxY := q[0].X, q[0].Y
+	maxX, maxY := minX, minY
 	for _, p := range q[1:] {
-		if p.X < minX {
-			minX = p.X
-		}
-		if p.X > maxX {
-			maxX = p.X
-		}
-		if p.Y < minY {
-			minY = p.Y
-		}
-		if p.Y > maxY {
-			maxY = p.Y
-		}
+		if p.X < minX { minX = p.X }
+		if p.X > maxX { maxX = p.X }
+		if p.Y < minY { minY = p.Y }
+		if p.Y > maxY { maxY = p.Y }
 	}
-	r := image.Rect(
-		int(math.Floor(minX)), int(math.Floor(minY)),
-		int(math.Ceil(maxX)), int(math.Ceil(maxY)),
-	).Intersect(img.Bounds())
+	r := image.Rect(int(math.Floor(minX)), int(math.Floor(minY)), int(math.Ceil(maxX)), int(math.Ceil(maxY))).Intersect(img.Bounds())
 	return img.SubImage(r).(*image.NRGBA)
 }
 
 func interpQuadPoint(q Quadrilateral, u, v float64) Point {
-	return Point{
-		X: (1-v)*((1-u)*q[0].X+u*q[1].X) + v*((1-u)*q[3].X+u*q[2].X),
-		Y: (1-v)*((1-u)*q[0].Y+u*q[1].Y) + v*((1-u)*q[3].Y+u*q[2].Y),
-	}
+	return Point{X: (1-v)*((1-u)*q[0].X+u*q[1].X) + v*((1-u)*q[3].X+u*q[2].X), Y: (1-v)*((1-u)*q[0].Y+u*q[1].Y) + v*((1-u)*q[3].Y+u*q[2].Y)}
 }
 
 func sampleBilinear(img *image.NRGBA, pt Point) color.Color {
@@ -161,10 +128,7 @@ func sampleBilinear(img *image.NRGBA, pt Point) color.Color {
 	x0, y0 := int(math.Floor(x)), int(math.Floor(y))
 	x1, y1 := x0+1, y0+1
 	fx, fy := x-float64(x0), y-float64(y0)
-	c00 := getSafe(img, x0, y0)
-	c10 := getSafe(img, x1, y0)
-	c01 := getSafe(img, x0, y1)
-	c11 := getSafe(img, x1, y1)
+	c00, c10, c01, c11 := getSafe(img, x0, y0), getSafe(img, x1, y0), getSafe(img, x0, y1), getSafe(img, x1, y1)
 	r00, g00, b00, a00 := c00.RGBA()
 	r10, g10, b10, a10 := c10.RGBA()
 	r01, g01, b01, a01 := c01.RGBA()
@@ -225,9 +189,7 @@ func brightnessHist(img *image.NRGBA, mask func(color.Color) bool) (hist [256]in
 		for x := b.Min.X; x < b.Max.X; x += 2 {
 			total++
 			c := img.At(x, y)
-			if !mask(c) {
-				continue
-			}
+			if !mask(c) { continue }
 			masked++
 			hist[avgBrightness(c)/257]++
 		}
