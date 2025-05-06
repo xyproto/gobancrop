@@ -2,7 +2,10 @@ module github.com/xyproto/gobancrop
 
 go 1.24.2
 
-require github.com/xyproto/carveimg v1.4.9
+require (
+	github.com/xyproto/carveimg v1.4.9
+	github.com/xyproto/palgen v1.6.1
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -16,7 +19,6 @@ require (
 	github.com/xyproto/burnfont v1.2.3 // indirect
 	github.com/xyproto/burnpal v1.0.0 // indirect
 	github.com/xyproto/env/v2 v2.5.3 // indirect
-	github.com/xyproto/palgen v1.6.1 // indirect
 	github.com/xyproto/vt100 v1.16.12 // indirect
 	golang.org/x/image v0.26.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
