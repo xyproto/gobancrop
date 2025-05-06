@@ -1,0 +1,52 @@
+# github.com/davecgh/go-spew v1.1.1
+## explicit
+# github.com/dkua/go-ico v0.0.0-20161218204303-1c25f691ce06
+## explicit
+github.com/dkua/go-ico
+# github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25
+## explicit
+github.com/jsummers/gobmp
+# github.com/lucasb-eyer/go-colorful v1.2.0
+## explicit; go 1.12
+github.com/lucasb-eyer/go-colorful
+# github.com/nathan-fiscaletti/consolesize-go v0.0.0-20220204101620-317176b6684d
+## explicit
+github.com/nathan-fiscaletti/consolesize-go
+# github.com/peterhellberg/gfx v0.0.0-20240717094052-4fa835cea5a4
+## explicit; go 1.17
+github.com/peterhellberg/gfx
+# github.com/pkg/term v1.2.0-beta.2.0.20210419004637-f749b98bd0ba
+## explicit; go 1.14
+github.com/pkg/term
+github.com/pkg/term/termios
+# github.com/pmezard/go-difflib v1.0.0
+## explicit
+# github.com/xyproto/burnfont v1.2.3
+## explicit; go 1.9
+github.com/xyproto/burnfont
+# github.com/xyproto/burnpal v1.0.0
+## explicit; go 1.11
+github.com/xyproto/burnpal
+# github.com/xyproto/carveimg v1.4.9
+## explicit; go 1.23.0
+github.com/xyproto/carveimg
+# github.com/xyproto/env/v2 v2.5.3
+## explicit; go 1.19
+github.com/xyproto/env/v2
+# github.com/xyproto/palgen v1.6.1
+## explicit; go 1.16
+github.com/xyproto/palgen
+# github.com/xyproto/vt100 v1.16.12
+## explicit; go 1.23.0
+github.com/xyproto/vt100
+# golang.org/x/image v0.26.0
+## explicit; go 1.23.0
+golang.org/x/image/riff
+golang.org/x/image/vp8
+golang.org/x/image/vp8l
+golang.org/x/image/webp
+# golang.org/x/sys v0.32.0
+## explicit; go 1.23.0
+golang.org/x/sys/unix
+# gopkg.in/yaml.v3 v3.0.1
+## explicit
