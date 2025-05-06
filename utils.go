@@ -180,7 +180,11 @@ func estimateDarkFrac(img *image.NRGBA, thr uint32) float64 {
 func autoSetup(img *image.NRGBA) (uint32, uint32, float64) {
 	hist, m, _ := brightnessHist(img, func(color.Color) bool { return true })
 	t := otsu(hist, m)
-	return uint32(t) * 257, uint32((t+255)/2) * 257, estimateDarkFrac(img, uint32(t)*257)
+	f := estimateDarkFrac(img, uint32(t)*257)
+	if f < 0.01 {
+		f = 0.01
+	}
+	return uint32(t) * 257, uint32((t+255)/2) * 257, f
 }
 
 func scanSegments(limit, depth int, thr uint32, frac float64, maxW int,
@@ -236,17 +240,51 @@ func refineLines(segs [][2]int) []float64 {
 	return lines
 }
 
-func findLines(img *image.NRGBA, w, h int, thr uint32, frac float64) (
-	ys, xs []float64,
-) {
-	isDark := func(y, x int, t uint32) bool {
-		r, g, b, _ := img.At(x, y).RGBA()
-		return (r+g+b)/3 < t
+func isWood(c color.Color) bool {
+	r, g, b, _ := c.RGBA()
+	rf, gf, bf := float64(r)/65535, float64(g)/65535, float64(b)/65535
+	h, s, v := rgbToHSV(rf, gf, bf)
+	return h >= 15 && h <= 50 && s >= 0.2 && v >= 0.2
+}
+
+func hueDelta(h1, h2 float64) float64 {
+	d := math.Abs(h1 - h2)
+	if d > 180 {
+		d = 360 - d
 	}
+	return d
+}
+
+func findLines(img *image.NRGBA, w, h int, thr uint32, _ float64) (ys, xs []float64) {
+	woodHue := 35.0
 	mask := func(_, _ int) bool { return true }
-	hs := scanSegments(h, w, thr, frac, maxLineWidth, isDark, mask)
-	vs := scanSegments(w, h, thr, frac, maxLineWidth, isDark, mask)
-	ys = refineLines(hs)
-	xs = refineLines(vs)
-	return
+
+	isGridPixel := func(x, y int) bool {
+		r, g, b, _ := img.At(x, y).RGBA()
+		avg := (r + g + b) / 3
+		hue, _, _ := rgbToHSV(float64(r)/65535, float64(g)/65535, float64(b)/65535)
+		return hueDelta(hue, woodHue) > 25 || avg < 20000
+	}
+
+	fracs := []float64{0.03, 0.025, 0.02, 0.015, 0.01, 0.0075}
+	widths := []int{8, 7, 6, 5, 4, 3}
+
+	for _, frac := range fracs {
+		for _, width := range widths {
+			isDarkH := func(y, x int, _ uint32) bool { return isGridPixel(x, y) }
+			isDarkV := func(x, y int, _ uint32) bool { return isGridPixel(x, y) }
+
+			hs := scanSegments(h, w, thr, frac, width, isDarkH, mask)
+			vs := scanSegments(w, h, thr, frac, width, isDarkV, mask)
+
+			ysCand := refineLines(hs)
+			xsCand := refineLines(vs)
+
+			if len(ysCand) == 19 && len(xsCand) == 19 {
+				return ysCand, xsCand
+			}
+		}
+	}
+
+	return nil, nil
 }
