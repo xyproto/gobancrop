@@ -37,7 +37,7 @@ func TestGobancropPipeline(t *testing.T) {
 				t.Fatalf("LoadImage(%s): %v", ti.path, err)
 			}
 
-			// 1) Coarse goban detection
+			// Coarse goban detection
 			quad, err := FindGoban(img)
 			if err != nil {
 				t.Fatalf("FindGoban: %v", err)

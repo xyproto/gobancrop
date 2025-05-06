@@ -240,13 +240,6 @@ func refineLines(segs [][2]int) []float64 {
 	return lines
 }
 
-func isWood(c color.Color) bool {
-	r, g, b, _ := c.RGBA()
-	rf, gf, bf := float64(r)/65535, float64(g)/65535, float64(b)/65535
-	h, s, v := rgbToHSV(rf, gf, bf)
-	return h >= 15 && h <= 50 && s >= 0.2 && v >= 0.2
-}
-
 func hueDelta(h1, h2 float64) float64 {
 	d := math.Abs(h1 - h2)
 	if d > 180 {
