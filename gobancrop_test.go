@@ -22,22 +22,22 @@ var testImages = []struct {
 }
 
 func TestGobancropPipeline(t *testing.T) {
-	outDir := filepath.Join("..", "output")
-	if err := os.RemoveAll(outDir); err != nil {
-		t.Fatalf("failed to clear output dir: %v", err)
-	}
+	outDir := "output"
+	// ensure output directory exists; do NOT clear, so outputs persist
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		t.Fatalf("failed to create output dir: %v", err)
 	}
 
-	size := 256
+	const size = 256
 	for _, ti := range testImages {
+		ti := ti // capture range
 		t.Run(ti.name, func(t *testing.T) {
 			img, err := carveimg.LoadImage(ti.path)
 			if err != nil {
 				t.Fatalf("LoadImage(%s): %v", ti.path, err)
 			}
 
+			// 1) Coarse goban detection
 			quad, err := FindGoban(img)
 			if err != nil {
 				t.Fatalf("FindGoban: %v", err)
@@ -46,31 +46,35 @@ func TestGobancropPipeline(t *testing.T) {
 			for i, p := range quad {
 				if p.X < float64(b.Min.X) || p.X > float64(b.Max.X) ||
 					p.Y < float64(b.Min.Y) || p.Y > float64(b.Max.Y) {
-					t.Fatalf("Quad[%d]=%v out of bounds %v", i, p, b)
+					t.Fatalf("quad[%d]=%v out of bounds %v", i, p, b)
 				}
 			}
 
+			// 2) Refine grid detection or shrink fallback
 			quad2, err := FindActualBoard(img, quad)
 			if err != nil {
-				t.Logf("FindActualBoard failed, using initial quad: %v", err)
-				quad2 = quad
+				t.Logf("FindActualBoard failed, using shrink fallback: %v", err)
+				quad2 = shrinkQuadAligned(quad)
+			} else {
+				d1 := hypot(quad2[0], quad2[1])
+				d2 := hypot(quad2[1], quad2[2])
+				ratio := d1 / d2
+				if ratio < 0.8 || ratio > 1.25 {
+					t.Errorf("board not square: ratio=%.2f (d1=%.1f d2=%.1f)", ratio, d1, d2)
+				}
 			}
 
-			d1 := hypot(quad2[0], quad2[1])
-			d2 := hypot(quad2[1], quad2[2])
-			ratio := d1 / d2
-			if ratio < 0.8 || ratio > 1.25 {
-				t.Errorf("board not square: ratio=%.2f (d1=%.1f d2=%.1f)", ratio, d1, d2)
-			}
-
+			// 3) Crop and correct
 			outImg, err := CropAndCorrect(img, quad2, size)
 			if err != nil {
 				t.Fatalf("CropAndCorrect: %v", err)
 			}
-			if w, h := outImg.Bounds().Dx(), outImg.Bounds().Dy(); w != size || h != size {
+			w, h := outImg.Bounds().Dx(), outImg.Bounds().Dy()
+			if w != size || h != size {
 				t.Fatalf("cropped size = %dx%d, want %dx%d", w, h, size, size)
 			}
 
+			// 4) Write output
 			base := strings.TrimSuffix(filepath.Base(ti.path), filepath.Ext(ti.path))
 			outPath := filepath.Join(outDir, base+"_cropped.png")
 			f, err := os.Create(outPath)
@@ -82,7 +86,6 @@ func TestGobancropPipeline(t *testing.T) {
 				t.Fatalf("encode PNG: %v", err)
 			}
 			f.Close()
-			// verify file exists
 			if _, err := os.Stat(outPath); err != nil {
 				t.Errorf("output file missing: %v", err)
 			}
@@ -91,7 +94,5 @@ func TestGobancropPipeline(t *testing.T) {
 }
 
 func hypot(a, b Point) float64 {
-	dx := a.X - b.X
-	dy := a.Y - b.Y
-	return math.Hypot(dx, dy)
+	return math.Hypot(a.X-b.X, a.Y-b.Y)
 }

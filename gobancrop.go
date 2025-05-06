@@ -10,63 +10,88 @@ import (
 	"sort"
 )
 
-const maxLineWidth = 5
-
 type Point struct{ X, Y float64 }
 type Quadrilateral [4]Point
 
+// shrinkQuadAligned insets an axis-aligned quad by one grid cell on all sides.
+func shrinkQuadAligned(q Quadrilateral) Quadrilateral {
+	minX, minY := q[0].X, q[0].Y
+	maxX, maxY := q[2].X, q[2].Y
+	// one cell is 1/18th of the board width
+	cell := (maxX - minX) / 18.0
+	return Quadrilateral{
+		{minX + cell, minY + cell},
+		{maxX - cell, minY + cell},
+		{maxX - cell, maxY - cell},
+		{minX + cell, maxY - cell},
+	}
+}
+
+// FindGoban finds the coarse, axis-aligned board bounding box by wood-color.
 func FindGoban(img *image.NRGBA) (Quadrilateral, error) {
 	log.Printf("FindGoban: scan bounds %v", img.Bounds())
 	b := img.Bounds()
 	minX, minY := float64(b.Max.X), float64(b.Max.Y)
 	maxX, maxY := 0.0, 0.0
 	found := false
+
+	isWood := func(c color.Color) bool {
+		r, g, b, _ := c.RGBA()
+		rf, gf, bf := float64(r)/65535, float64(g)/65535, float64(b)/65535
+		h, s, _ := rgbToHSV(rf, gf, bf)
+		return h >= 20 && h <= 45 && s >= 0.3
+	}
+
 	for y := b.Min.Y; y < b.Max.Y; y += 2 {
 		for x := b.Min.X; x < b.Max.X; x += 2 {
-			r, g, bb, _ := img.At(x, y).RGBA()
-			rf, gf, bf := float64(r)/65535, float64(g)/65535, float64(bb)/65535
-			h, s, _ := rgbToHSV(rf, gf, bf)
-			if h >= 20 && h <= 45 && s >= 0.3 {
+			if isWood(img.At(x, y)) {
 				found = true
-				xF, yF := float64(x), float64(y)
-				if xF < minX {
-					minX = xF
+				xf, yf := float64(x), float64(y)
+				if xf < minX {
+					minX = xf
 				}
-				if xF > maxX {
-					maxX = xF
+				if xf > maxX {
+					maxX = xf
 				}
-				if yF < minY {
-					minY = yF
+				if yf < minY {
+					minY = yf
 				}
-				if yF > maxY {
-					maxY = yF
+				if yf > maxY {
+					maxY = yf
 				}
 			}
 		}
 	}
 	if !found {
-		log.Print("FindGoban: no wood region found")
 		return Quadrilateral{}, errors.New("no wood region found")
 	}
-	q := Quadrilateral{{minX, minY}, {maxX, minY}, {maxX, maxY}, {minX, maxY}}
+
+	q := Quadrilateral{
+		{minX, minY},
+		{maxX, minY},
+		{maxX, maxY},
+		{minX, maxY},
+	}
 	log.Printf("FindGoban: bounds %v", q)
 	return q, nil
 }
 
+// FindActualBoard fits the 19×19 grid within a coarse quad, returning a refined quad.
 func FindActualBoard(img *image.NRGBA, quad Quadrilateral) (Quadrilateral, error) {
 	log.Printf("FindActualBoard: input %v", quad)
 	sub := cropQuad(img, quad)
 	w, h := sub.Bounds().Dx(), sub.Bounds().Dy()
 	log.Printf("subimage %dx%d", w, h)
+
 	thr, _, darkFrac := autoSetup(sub)
-	log.Printf("thr=%d dark=%.3f", thr, darkFrac)
+	log.Printf("thr=%d darkFrac=%.3f", thr, darkFrac)
+
 	ys, xs := findLines(sub, w, h, thr, darkFrac)
 	log.Printf("lines h=%d v=%d", len(ys), len(xs))
 	if len(ys) != 19 || len(xs) != 19 {
-		msg := fmt.Sprintf("grid not found: h=%d v=%d", len(ys), len(xs))
-		log.Print(msg)
-		return Quadrilateral{}, errors.New(msg)
+		return Quadrilateral{}, fmt.Errorf("grid not found: h=%d v=%d", len(ys), len(xs))
 	}
+
 	tl := interpQuadPoint(quad, xs[0]/float64(w-1), ys[0]/float64(h-1))
 	tr := interpQuadPoint(quad, xs[18]/float64(w-1), ys[0]/float64(h-1))
 	br := interpQuadPoint(quad, xs[18]/float64(w-1), ys[18]/float64(h-1))
@@ -76,6 +101,7 @@ func FindActualBoard(img *image.NRGBA, quad Quadrilateral) (Quadrilateral, error
 	return r, nil
 }
 
+// CropAndCorrect warps the quad to a size×size square, perspective-corrected.
 func CropAndCorrect(img *image.NRGBA, quad Quadrilateral, size int) (*image.NRGBA, error) {
 	log.Printf("CropAndCorrect: size=%d quad=%v", size, quad)
 	if size <= 0 {
@@ -97,10 +123,12 @@ func CropAndCorrect(img *image.NRGBA, quad Quadrilateral, size int) (*image.NRGB
 	return out, nil
 }
 
-func cropQuad(img *image.NRGBA, quad Quadrilateral) *image.NRGBA {
-	minX, minY := quad[0].X, quad[0].Y
-	maxX, maxY := minX, minY
-	for _, p := range quad[1:] {
+// --- internal helpers ---
+
+func cropQuad(img *image.NRGBA, q Quadrilateral) *image.NRGBA {
+	minX, minY := q[0].X, q[0].Y
+	maxX, maxY := q[0].X, q[0].Y
+	for _, p := range q[1:] {
 		if p.X < minX {
 			minX = p.X
 		}
@@ -114,7 +142,10 @@ func cropQuad(img *image.NRGBA, quad Quadrilateral) *image.NRGBA {
 			maxY = p.Y
 		}
 	}
-	r := image.Rect(int(math.Floor(minX)), int(math.Floor(minY)), int(math.Ceil(maxX)), int(math.Ceil(maxY))).Intersect(img.Bounds())
+	r := image.Rect(
+		int(math.Floor(minX)), int(math.Floor(minY)),
+		int(math.Ceil(maxX)), int(math.Ceil(maxY)),
+	).Intersect(img.Bounds())
 	return img.SubImage(r).(*image.NRGBA)
 }
 
@@ -220,17 +251,20 @@ func otsu(hist [256]int, total int) int {
 			break
 		}
 		sumB += float64(t * hist[t])
-		mB, mF := sumB/wB, (sumT-sumB)/wF
+		mB := sumB / wB
+		mF := (sumT - sumB) / wF
 		v := wB * wF * (mB - mF) * (mB - mF)
 		if v > maxV {
-			maxV, thresh = v, t
+			maxV = v
+			thresh = t
 		}
 	}
 	return thresh
 }
 
 func estimateDarkFrac(img *image.NRGBA, thr uint32) float64 {
-	h, col := img.Bounds().Dy(), img.Bounds().Dx()/2
+	h := img.Bounds().Dy()
+	col := img.Bounds().Dx() / 2
 	var runs []int
 	run := 0
 	for y := 0; y < h; y++ {
@@ -253,12 +287,14 @@ func estimateDarkFrac(img *image.NRGBA, thr uint32) float64 {
 }
 
 func autoSetup(img *image.NRGBA) (uint32, uint32, float64) {
-	hist, m, _ := brightnessHist(img, func(c color.Color) bool { return true })
+	hist, m, _ := brightnessHist(img, func(color.Color) bool { return true })
 	t := otsu(hist, m)
 	return uint32(t) * 257, uint32((t+255)/2) * 257, estimateDarkFrac(img, uint32(t)*257)
 }
 
-func scanSegments(limit, depth int, thr uint32, frac float64, maxW int, isDark func(int, int, uint32) bool, mask func(int, int) bool) [][2]int {
+func scanSegments(limit, depth int, thr uint32, frac float64, maxW int,
+	isDark func(int, int, uint32) bool, mask func(int, int) bool,
+) [][2]int {
 	minD := int(frac * float64(depth))
 	var raw [][]int
 	var curr []int
@@ -309,8 +345,13 @@ func refineLines(segs [][2]int) []float64 {
 	return lines
 }
 
-func findLines(img *image.NRGBA, w, h int, thr uint32, frac float64) (ys, xs []float64) {
-	isDark := func(y, x int, t uint32) bool { r, g, b, _ := img.At(x, y).RGBA(); return (r+g+b)/3 < t }
+func findLines(img *image.NRGBA, w, h int, thr uint32, frac float64) (
+	ys, xs []float64,
+) {
+	isDark := func(y, x int, t uint32) bool {
+		r, g, b, _ := img.At(x, y).RGBA()
+		return (r+g+b)/3 < t
+	}
 	mask := func(_, _ int) bool { return true }
 	hs := scanSegments(h, w, thr, frac, maxLineWidth, isDark, mask)
 	vs := scanSegments(w, h, thr, frac, maxLineWidth, isDark, mask)
@@ -318,3 +359,5 @@ func findLines(img *image.NRGBA, w, h int, thr uint32, frac float64) (ys, xs []f
 	xs = refineLines(vs)
 	return
 }
+
+const maxLineWidth = 5
